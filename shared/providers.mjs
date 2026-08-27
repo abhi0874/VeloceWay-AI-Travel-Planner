@@ -130,11 +130,14 @@ async function geminiRequest({
 }) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
     model || DEFAULTS.geminiModel,
-  )}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  )}:generateContent`;
 
+  /* The credential goes in a header, never in the query string: Google's own
+     guidance, and the only form the newer "AQ." authentication keys are
+     documented against. It also keeps the key out of URLs, which get logged. */
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
       contents: [{ role: "user", parts: [{ text: user }] }],
@@ -434,9 +437,8 @@ export async function pingProvider(provider, { apiKey, model } = {}) {
 
     if (!apiKey) return { ok: false, message: "Add a Gemini key first." };
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models?pageSize=1&key=${encodeURIComponent(
-        apiKey,
-      )}`,
+      "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1",
+      { headers: { "x-goog-api-key": apiKey } },
     );
     if (!res.ok) await raiseHttpError(res, "gemini");
     return { ok: true, message: "Key works — and stays free as long as you never link billing." };
