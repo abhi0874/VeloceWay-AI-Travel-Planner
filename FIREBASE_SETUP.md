@@ -47,20 +47,38 @@ VITE_FIREBASE_APP_ID=1:123456789:web:abc123
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /users/{uid}/trips/{tripId} {
+    match /users/{uid}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
   }
 }
 ```
 
-4. **Publish**. This means: users can only ever read/write their own trips.
+4. **Publish**. This means: everything filed under someone's own `users/{uid}`
+   — their saved trips, their history setting *and* their profile — is readable
+   and writable by them alone, and by nobody else.
+
+> **This rule is required, not optional.** Trip history is stored only in the
+> account — nothing is kept on the visitor's device — so until this is published
+> there is nowhere for a trip to go and the History view stays empty. The
+> documents involved are `users/{uid}/trips/{tripId}`,
+> `users/{uid}/settings/history` (the on/off switch) and
+> `users/{uid}/profile/main`.
+
+> Already published the earlier trips-only rule (`match /users/{uid}/trips/{tripId}`)?
+> Replace it with the one above, or the history switch and the profile will both
+> be refused.
 
 ## 5. Try it
 
 Sign up from the hero's **Sign up** button, plan a trip with history on, then
 check Firestore Console → you'll see `users/{uid}/trips/...` documents. Sign
-in on another device and the same trips appear.
+in on another device and the same trips appear — they were never on the first
+device to begin with.
+
+Then click your initials in the top-right, set a display name and your trip
+defaults, and **Save changes** — Firestore gains a `users/{uid}/profile/main`
+document, and the next device you sign in on starts from those same defaults.
 
 ## Free-tier headroom (Spark plan)
 
@@ -81,3 +99,6 @@ A trip history entry is a few KB — even heavy daily use stays far below this.
   → Add domain.
 - **`auth/operation-not-allowed`** — the sign-in provider isn't enabled (step 3).
 - **Permission denied on Firestore** — the rules from step 4 aren't published.
+- **History always empty / trips never appear** — same cause: with no matching
+  rule, or with no `.env` values at all, there is no account to store history in
+  and the History view will keep offering a sign-in.

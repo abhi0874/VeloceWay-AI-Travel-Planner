@@ -1,7 +1,14 @@
 import { useEffect, useState } from "react";
 import { ArrowRight, ChevronDown, MapPin } from "lucide-react";
-import { openPlanner, openAuth, AUTH_CHANGED_EVENT } from "@/lib/events";
-import { signOutUser, watchAuth, type AuthUser } from "@/lib/firebase";
+import {
+  openPlanner,
+  openAuth,
+  openProfile,
+  AUTH_CHANGED_EVENT,
+  PROFILE_CHANGED_EVENT,
+} from "@/lib/events";
+import { watchAuth, type AuthUser } from "@/lib/firebase";
+import { displayNameFor, initialsOf, loadProfile } from "@/lib/profile";
 import heroPhoto from "@/assets/hero.jpg";
 
 /**
@@ -47,6 +54,20 @@ export default function Hero() {
       window.removeEventListener(AUTH_CHANGED_EVENT, onAuth);
     };
   }, []);
+
+  /* The saved profile supplies the name whenever the auth record has none —
+     someone who signed up with email only gets a name the moment they set one. */
+  const [profileName, setProfileName] = useState("");
+  useEffect(() => {
+    const refresh = () => setProfileName(loadProfile().displayName);
+    refresh();
+    window.addEventListener(PROFILE_CHANGED_EVENT, refresh);
+    return () => window.removeEventListener(PROFILE_CHANGED_EVENT, refresh);
+  }, [user]);
+
+  const chosenName = user?.displayName || profileName;
+  const greetingName = displayNameFor(chosenName, user?.email);
+
   // walks the high-res chain on load failure; ends at the bundled photo
   const [photoIndex, setPhotoIndex] = useState(0);
   const photo = HERO_PHOTOS[photoIndex]; // undefined once all have failed
@@ -118,34 +139,40 @@ export default function Hero() {
             ))}
           </div>
 
-          <div className="hidden md:flex items-center gap-3">
+          {/* Kept visible on phones too — the profile and the way in shouldn't
+              disappear on the screen most people plan trips on. */}
+          <div className="flex items-center gap-2 md:gap-3">
             {user ? (
-              <>
-                <span className="text-[13px] text-white/85 [text-shadow:0_1px_8px_rgba(0,0,0,0.4)]">
-                  Hi,{" "}
-                  {(user.displayName || user.email || "traveler").split("@")[0]}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => void signOutUser()}
-                  className="bg-transparent border border-white/25 hover:border-wandor-accent rounded-full px-4 py-2 cursor-pointer font-sans text-[13px] font-bold text-white/90 hover:text-wandor-accent transition-all [text-shadow:0_1px_8px_rgba(0,0,0,0.4)]"
+              <button
+                type="button"
+                onClick={openProfile}
+                title="Your profile"
+                aria-label={`Your profile — signed in as ${greetingName}`}
+                className="group flex items-center gap-2.5 rounded-full border border-white/25 bg-black/40 py-1.5 pl-1.5 pr-1.5 md:pr-4 cursor-pointer transition-all hover:border-wandor-accent hover:bg-black/70 active:scale-95"
+              >
+                <span
+                  aria-hidden="true"
+                  className="grid h-8 w-8 place-items-center rounded-full bg-wandor-accent font-sans text-[12px] font-extrabold tracking-[0.02em] text-white shadow-[0_6px_18px_rgba(230,59,46,0.45)]"
                 >
-                  Sign out
-                </button>
-              </>
+                  {initialsOf(chosenName, user.email)}
+                </span>
+                <span className="hidden md:inline max-w-[140px] truncate font-sans text-[13px] font-bold text-white/90 transition-colors group-hover:text-wandor-accent [text-shadow:0_1px_8px_rgba(0,0,0,0.4)]">
+                  {greetingName}
+                </span>
+              </button>
             ) : (
               <>
                 <button
                   type="button"
                   onClick={() => openAuth("signin")}
-                  className="bg-transparent border border-transparent rounded-full px-4 py-2 cursor-pointer font-sans font-bold text-[15px] text-white/90 hover:bg-black/85 hover:text-wandor-accent transition-all [text-shadow:0_1px_8px_rgba(0,0,0,0.4)]"
+                  className="bg-transparent border border-transparent rounded-full px-3 md:px-4 py-2 cursor-pointer font-sans font-bold text-[13px] md:text-[15px] text-white/90 hover:bg-black/85 hover:text-wandor-accent transition-all [text-shadow:0_1px_8px_rgba(0,0,0,0.4)]"
                 >
                   Sign in
                 </button>
                 <button
                   type="button"
                   onClick={() => openAuth("signup")}
-                  className="bg-wandor-accent hover:bg-[#c93326] rounded-full px-5 py-2.5 cursor-pointer font-sans text-[13px] font-extrabold uppercase tracking-[0.06em] text-white shadow-[0_8px_28px_rgba(230,59,46,0.45)] transition-all active:scale-95"
+                  className="bg-wandor-accent hover:bg-[#c93326] rounded-full px-4 md:px-5 py-2 md:py-2.5 cursor-pointer font-sans text-[12px] md:text-[13px] font-extrabold uppercase tracking-[0.06em] text-white shadow-[0_8px_28px_rgba(230,59,46,0.45)] transition-all active:scale-95"
                 >
                   Sign up
                 </button>

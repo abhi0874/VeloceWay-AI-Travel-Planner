@@ -2,6 +2,7 @@ import Hero from "@/components/Hero";
 import MoodExplorer from "@/components/MoodExplorer";
 import PlannerOverlay from "@/components/planner/PlannerOverlay";
 import AuthDialog from "@/components/AuthDialog";
+import ProfileDialog from "@/components/ProfileDialog";
 import {
   ContactSection,
   DeparturesTicker,
@@ -35,6 +36,7 @@ export default function App() {
       {/* overlays + chrome */}
       <PlannerOverlay />
       <AuthDialog />
+      <ProfileDialog />
       <ScrollProgressBar />
       <SectionRail />
     </div>

@@ -83,25 +83,56 @@ Replace the placeholders before going live.
 - **Contact** — email, phone, hours, socials, and a mailto-powered message form.
 - **Demo mode** — without a key, everything works on built-in sample content.
 
-### The seven planner features
+### The planner features, one by one
 
 | # | Feature | Where it lives |
 |---|---|---|
 | 1 | Routes & distances per transport mode, with cheapest/fastest verdicts and a notice when road/rail isn't possible | `shared/prompts.mjs` (`routes` schema) → `ResultView.tsx` |
-| 2 | Trip history with an on/off toggle, each entry showing its total cost | `src/lib/history.ts`, `HistoryView` in `PlannerOverlay.tsx` |
+| 2 | Trip history, kept in the traveler's account with an on/off switch; each entry shows its total cost | `src/lib/history.ts`, `HistoryView` in `PlannerOverlay.tsx` |
 | 3 | City map of the destination, Google-Maps-dark styling | `src/components/planner/CityMap.tsx` (library-free slippy map) |
 | 4 | Days-to-stay stepper | `PlannerOverlay.tsx` |
 | 5 | Travelers stepper (1–100) | `PlannerOverlay.tsx` |
 | 6 | Destination typo tolerance — "did you mean …?" | `src/lib/places.ts` |
 | 7 | Sign in / sign up + cloud trip sync | `src/components/AuthDialog.tsx`, `src/lib/firebase.ts`, `FIREBASE_SETUP.md` |
+| 8 | Traveler profile — editable display name, read-only email, saved trip defaults | `src/components/ProfileDialog.tsx`, `src/lib/profile.ts` |
 
-## Accounts (optional)
+## Accounts
 
-Sign-in and cross-device trip sync run on Firebase Auth + Firestore, loaded
-lazily from Google's CDN — nothing to `npm install`. Set the `VITE_FIREBASE_*`
-values in `.env` and follow `FIREBASE_SETUP.md` (two console toggles and one
-Firestore rule). Leave them blank and the app still works: history simply stays
-in the browser.
+Sign-in and trip history run on Firebase Auth + Firestore, loaded lazily from
+Google's CDN — nothing to `npm install`. Set the `VITE_FIREBASE_*` values in
+`.env` and follow `FIREBASE_SETUP.md` (two console toggles and one Firestore
+rule). Planning itself works with no account at all; trip history is the one
+feature that needs one, because it is stored in the account and never on the
+device.
+
+### Trip history
+
+History is cloud-only, on purpose. Saved trips live at
+`users/{uid}/trips/{tripId}` and the on/off switch at
+`users/{uid}/settings/history` — nothing is written to `localStorage`, cookies
+or IndexedDB. The only copy in the browser is an in-memory mirror that exists
+while the tab is open, so:
+
+- signed out there is no history at all, and the History view offers a sign-in;
+- switching the toggle off deletes every saved trip from the account;
+- the newest eight trips are kept, one per destination, and extras are deleted
+  from Firestore too.
+
+### Profile
+
+Once signed in, the hero's top-right corner becomes a round initials button.
+Clicking it opens the profile panel, where a traveler can set the name they want
+to be greeted by and the defaults every new trip starts from — home city,
+travelers, days, budget level, preferred way to travel and up to six moods. Their
+email is shown but locked: it identifies the account and keeps saved trips
+attached to it.
+
+The name is written to the Firebase auth record (so it survives on any device),
+while the defaults live in `localStorage` under `veloceway:profile:v1:{uid}` and,
+when signed in, mirror to Firestore at `users/{uid}/profile/main`. Both reads and
+writes degrade quietly: a blocked or offline Firestore just means the profile is
+saved on that device only, which is why the setup guide's rule must cover
+`users/{uid}/{document=**}` and not trips alone.
 
 ## Troubleshooting
 

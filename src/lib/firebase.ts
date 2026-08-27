@@ -17,6 +17,22 @@ export interface AuthUser {
   uid: string;
   email: string | null;
   displayName: string | null;
+  /** "password", "google.com", … — the profile shows how they signed in. */
+  providerId?: string;
+  /** ISO string from the auth record; powers "traveller since". */
+  createdAt?: string;
+}
+
+/** Shapes an SDK user object into the app's own AuthUser. */
+/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+function toAuthUser(u: any): AuthUser {
+  return {
+    uid: u.uid,
+    email: u.email ?? null,
+    displayName: u.displayName ?? null,
+    providerId: u.providerData?.[0]?.providerId || "password",
+    createdAt: u.metadata?.creationTime || undefined,
+  };
 }
 
 let currentUid: string | null = null;
@@ -105,14 +121,14 @@ export async function signUpWithEmail(email: string, password: string): Promise<
   const { auth, authMod } = await ensureFirebase();
   const cred = await authMod.createUserWithEmailAndPassword(auth, email, password);
   currentUid = cred.user.uid;
-  return { uid: cred.user.uid, email: cred.user.email, displayName: cred.user.displayName };
+  return toAuthUser(cred.user);
 }
 
 export async function signInWithEmail(email: string, password: string): Promise<AuthUser> {
   const { auth, authMod } = await ensureFirebase();
   const cred = await authMod.signInWithEmailAndPassword(auth, email, password);
   currentUid = cred.user.uid;
-  return { uid: cred.user.uid, email: cred.user.email, displayName: cred.user.displayName };
+  return toAuthUser(cred.user);
 }
 
 export async function signInWithGoogle(): Promise<AuthUser> {
@@ -120,7 +136,31 @@ export async function signInWithGoogle(): Promise<AuthUser> {
   const provider = new authMod.GoogleAuthProvider();
   const cred = await authMod.signInWithPopup(auth, provider);
   currentUid = cred.user.uid;
-  return { uid: cred.user.uid, email: cred.user.email, displayName: cred.user.displayName };
+  return toAuthUser(cred.user);
+}
+
+/**
+ * Renames the signed-in traveller on the auth record itself, so every future
+ * session sees the chosen name. Firebase does NOT fire onAuthStateChanged for a
+ * profile edit, so callers must announce the change themselves.
+ */
+export async function updateDisplayName(name: string): Promise<AuthUser> {
+  const { auth, authMod } = await ensureFirebase();
+  const user = auth.currentUser;
+  if (!user) throw new Error("You're signed out — sign in again to change your name.");
+  await authMod.updateProfile(user, { displayName: name });
+  await user.reload?.();
+  return toAuthUser(auth.currentUser || user);
+}
+
+/** Emails a reset link. Only meaningful for password accounts. */
+export async function sendPasswordReset(email: string): Promise<void> {
+  const { auth, authMod } = await ensureFirebase();
+  try {
+    await authMod.sendPasswordResetEmail(auth, email);
+  } catch (err) {
+    throw new Error(friendlyAuthError(err));
+  }
 }
 
 export async function signOutUser(): Promise<void> {
@@ -142,7 +182,7 @@ export function watchAuth(cb: (user: AuthUser | null) => void): () => void {
       if (cancelled) return;
       unsub = authMod.onAuthStateChanged(auth, (u: any) => {
         currentUid = u ? u.uid : null;
-        cb(u ? { uid: u.uid, email: u.email, displayName: u.displayName } : null);
+        cb(u ? toAuthUser(u) : null);
       });
     })
     .catch(() => cb(null));
@@ -178,8 +218,61 @@ export async function pushCloudTrips(uid: string, entries: TripHistoryEntry[]): 
   await Promise.all(entries.map((e) => pushCloudTrip(uid, e)));
 }
 
+export async function deleteCloudTrip(uid: string, tripId: string): Promise<void> {
+  const { db, fsMod } = await ensureFirebase();
+  await fsMod.deleteDoc(fsMod.doc(db, "users", uid, "trips", tripId));
+}
+
 export async function deleteAllCloudTrips(uid: string): Promise<void> {
   const { db, fsMod } = await ensureFirebase();
   const snap = await fsMod.getDocs(fsMod.collection(db, "users", uid, "trips"));
   await Promise.all(snap.docs.map((d: any) => fsMod.deleteDoc(fsMod.doc(db, "users", uid, "trips", d.id))));
+}
+
+/* ── Firestore history preference (users/{uid}/settings/history) ───────── */
+
+/**
+ * The on/off switch lives in the account, not the browser: history itself is
+ * cloud-only, so the preference that governs it has no business on the disk
+ * either. `null` means "never set" — callers fall back to on.
+ */
+export async function pullHistoryPref(uid: string): Promise<boolean | null> {
+  const { db, fsMod } = await ensureFirebase();
+  const snap = await fsMod.getDoc(fsMod.doc(db, "users", uid, "settings", "history"));
+  if (!snap.exists()) return null;
+  const value = (snap.data() as { enabled?: unknown }).enabled;
+  return typeof value === "boolean" ? value : null;
+}
+
+export async function pushHistoryPref(uid: string, enabled: boolean): Promise<void> {
+  const { db, fsMod } = await ensureFirebase();
+  await fsMod.setDoc(
+    fsMod.doc(db, "users", uid, "settings", "history"),
+    { enabled },
+    { merge: true },
+  );
+}
+
+/* ── Firestore profile (users/{uid}/profile/main) ─────────────────────── */
+
+/**
+ * A single document rather than a field on `users/{uid}`, so one rule covering
+ * `users/{uid}/{document=**}` protects trips and profile alike.
+ */
+export async function pullCloudProfile(uid: string): Promise<Record<string, unknown> | null> {
+  const { db, fsMod } = await ensureFirebase();
+  const snap = await fsMod.getDoc(fsMod.doc(db, "users", uid, "profile", "main"));
+  return snap.exists() ? (snap.data() as Record<string, unknown>) : null;
+}
+
+export async function pushCloudProfile(
+  uid: string,
+  profile: Record<string, unknown>,
+): Promise<void> {
+  const { db, fsMod } = await ensureFirebase();
+  await fsMod.setDoc(
+    fsMod.doc(db, "users", uid, "profile", "main"),
+    JSON.parse(JSON.stringify(profile)), // Firestore rejects `undefined`
+    { merge: true },
+  );
 }

@@ -17,15 +17,25 @@ import {
 } from "lucide-react";
 import { MOODS, MONTHS } from "@/lib/moods";
 import { suggestCorrection } from "@/lib/places";
+import { plannerDefaults } from "@/lib/profile";
 import {
   clearHistory,
+  historyAvailable,
   isHistoryEnabled,
   loadHistory,
+  refreshHistory,
   saveTripToHistory,
   setHistoryEnabled,
   type TripHistoryEntry,
 } from "@/lib/history";
-import { onOpenPlanner, TRIPS_CHANGED_EVENT, type OpenPlannerDetail } from "@/lib/events";
+import {
+  AUTH_CHANGED_EVENT,
+  onOpenPlanner,
+  openAuth,
+  PROFILE_CHANGED_EVENT,
+  TRIPS_CHANGED_EVENT,
+  type OpenPlannerDetail,
+} from "@/lib/events";
 import { planTrip, samplePlan } from "@/lib/api";
 import type {
   BudgetId,
@@ -151,26 +161,30 @@ function Segmented<T extends string>({
 
 function HistoryView({
   historyOn,
+  signedIn,
   onToggleHistory,
+  onSignIn,
   onBack,
   onOpen,
 }: {
   historyOn: boolean;
+  signedIn: boolean;
   onToggleHistory: () => void;
+  onSignIn: () => void;
   onBack: () => void;
   onOpen: (t: TripHistoryEntry) => void;
 }) {
-  const [entries, setEntries] = useState<TripHistoryEntry[]>(() =>
-    historyOn ? loadHistory() : [],
-  );
+  const [entries, setEntries] = useState<TripHistoryEntry[]>(() => loadHistory());
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const refresh = () => setEntries(historyOn ? loadHistory() : []);
-
-  const flipSwitch = () => {
-    onToggleHistory(); // parent flips the state; turning off erases storage
+  /* Trips arrive from the account over the network, so this list follows the
+     change event rather than reading once and hoping. */
+  useEffect(() => {
+    const refresh = () => setEntries(loadHistory());
     refresh();
-  };
+    window.addEventListener(TRIPS_CHANGED_EVENT, refresh);
+    return () => window.removeEventListener(TRIPS_CHANGED_EVENT, refresh);
+  }, [historyOn, signedIn]);
 
   return (
     <div className="flex flex-col gap-5">
@@ -182,38 +196,62 @@ function HistoryView({
         ← Back to the planner
       </button>
 
-      <div className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-        <div>
-          <p className="text-white font-semibold text-[15px]">Save trips on this device</p>
-          <p className="text-white/45 text-[12px] mt-0.5">
-            Stored only in your browser — switching off erases everything.
-          </p>
-        </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={historyOn}
-          onClick={flipSwitch}
-          className={`relative w-12 h-7 rounded-full border-none cursor-pointer transition-colors flex-shrink-0 ${
-            historyOn ? "bg-wandor-accent" : "bg-white/20"
-          }`}
-        >
-          <span
-            className={`absolute top-1 w-5 h-5 rounded-full bg-white transition-all ${
-              historyOn ? "left-6" : "left-1"
+      {signedIn ? (
+        <div className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          <div>
+            <p className="text-white font-semibold text-[15px]">Keep a trip history</p>
+            <p className="text-white/45 text-[12px] mt-0.5">
+              Saved to your account, never to this device — switching off erases
+              every trip you've kept.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={historyOn}
+            aria-label="Keep a trip history"
+            onClick={onToggleHistory}
+            className={`relative w-12 h-7 rounded-full border-none cursor-pointer transition-colors flex-shrink-0 ${
+              historyOn ? "bg-wandor-accent" : "bg-white/20"
             }`}
-          />
-        </button>
-      </div>
+          >
+            <span
+              className={`absolute top-1 w-5 h-5 rounded-full bg-white transition-all ${
+                historyOn ? "left-6" : "left-1"
+              }`}
+            />
+          </button>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          <div>
+            <p className="text-white font-semibold text-[15px]">
+              Sign in to keep a trip history
+            </p>
+            <p className="text-white/45 text-[12px] mt-0.5">
+              Trips are stored in your account, so nothing is left on this
+              device — which also means there's nowhere to keep them until you
+              sign in.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onSignIn}
+            className="bg-wandor-accent hover:bg-[#c93326] text-white border-none cursor-pointer text-[12px] font-bold uppercase tracking-[0.08em] px-5 py-2.5 rounded-full transition-all active:scale-95"
+          >
+            Sign in
+          </button>
+        </div>
+      )}
 
-      {!historyOn && (
+      {signedIn && !historyOn && (
         <p className="text-white/50 text-[13px]">
           History is switched off — flip the switch above to start keeping
           your trips.
         </p>
       )}
 
-      {historyOn && entries.length === 0 && (
+      {signedIn && historyOn && entries.length === 0 && (
         <p className="text-white/50 text-[13px]">
           No trips saved yet — generate a plan and it will appear here with
           its total estimated cost.
@@ -341,12 +379,34 @@ export default function PlannerOverlay() {
   const [open, setOpen] = useState(false);
   const [prefill, setPrefill] = useState<OpenPlannerDetail>({});
   const [historyOn, setHistoryOn] = useState(isHistoryEnabled());
+  const [signedIn, setSignedIn] = useState(historyAvailable());
   const [bodyView, setBodyView] = useState<BodyView>("planner");
   const [restore, setRestore] = useState<{ plan: TripPlan; token: number } | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const lastActive = useRef<Element | null>(null);
 
+  /* Both answers — "can there be a history at all" and "is it switched on" —
+     belong to the account and arrive over the network, so they're re-read
+     whenever the signed-in traveller or their trips change. */
+  useEffect(() => {
+    const sync = () => {
+      setSignedIn(historyAvailable());
+      setHistoryOn(isHistoryEnabled());
+    };
+    sync();
+    window.addEventListener(AUTH_CHANGED_EVENT, sync);
+    window.addEventListener(TRIPS_CHANGED_EVENT, sync);
+    return () => {
+      window.removeEventListener(AUTH_CHANGED_EVENT, sync);
+      window.removeEventListener(TRIPS_CHANGED_EVENT, sync);
+    };
+  }, []);
+
   const toggleHistory = () => {
+    if (!historyAvailable()) {
+      openAuth("signin"); // nothing to switch on until there's an account
+      return;
+    }
     const next = !historyOn;
     setHistoryEnabled(next); // turning off also erases what was saved
     setHistoryOn(next);
@@ -364,6 +424,8 @@ export default function PlannerOverlay() {
 
   useEffect(() => {
     if (!open) return;
+    // Nothing is cached on disk, so the account is asked afresh each time.
+    void refreshHistory();
     lastActive.current = document.activeElement;
     document.body.style.overflow = "hidden";
     panelRef.current?.focus();
@@ -440,7 +502,9 @@ export default function PlannerOverlay() {
           {bodyView === "history" && (
             <HistoryView
               historyOn={historyOn}
+              signedIn={signedIn}
               onToggleHistory={toggleHistory}
+              onSignIn={() => openAuth("signin")}
               onBack={() => setBodyView("planner")}
               onOpen={(t) => {
                 if (t.plan) {
@@ -468,15 +532,19 @@ function PlannerBody({
   restore: { plan: TripPlan; token: number } | null;
 }) {
   const [phase, setPhase] = useState<Phase>("form");
+  /* Trip defaults come from the traveler's profile, so a returning visitor
+     starts on their own numbers instead of ours. Read once, lazily — the form
+     is theirs to change from here on. */
+  const defaults = useState(plannerDefaults)[0];
   const [prompt, setPrompt] = useState(prefill.prompt || "");
-  const [source, setSource] = useState("");
+  const [source, setSource] = useState(defaults.homeCity);
   const [destination, setDestination] = useState("");
-  const [moods, setMoods] = useState<string[]>(["food", "nature"]);
+  const [moods, setMoods] = useState<string[]>(defaults.moods);
   const [month, setMonth] = useState("");
-  const [travelers, setTravelers] = useState(2);
-  const [days, setDays] = useState(7);
-  const [budget, setBudget] = useState<BudgetId>("mid");
-  const [transport, setTransport] = useState<TransportPref>("any");
+  const [travelers, setTravelers] = useState(defaults.travelers);
+  const [days, setDays] = useState(defaults.days);
+  const [budget, setBudget] = useState<BudgetId>(defaults.budget);
+  const [transport, setTransport] = useState<TransportPref>(defaults.transport);
   const [inspirationName, setInspirationName] = useState(prefill.inspirationName || "");
   const [plan, setPlan] = useState<TripPlan | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
@@ -492,6 +560,23 @@ function PlannerBody({
     if (prefill.inspirationName) setInspirationName(prefill.inspirationName);
   }, [prefill]);
 
+  /* Saving new trip defaults in the profile should be visible here right away,
+     but only while the form is still the thing on screen — never mid-result. */
+  useEffect(() => {
+    const onProfile = () => {
+      if (phase !== "form") return;
+      const next = plannerDefaults();
+      setSource(next.homeCity);
+      setMoods(next.moods);
+      setTravelers(next.travelers);
+      setDays(next.days);
+      setBudget(next.budget);
+      setTransport(next.transport);
+    };
+    window.addEventListener(PROFILE_CHANGED_EVENT, onProfile);
+    return () => window.removeEventListener(PROFILE_CHANGED_EVENT, onProfile);
+  }, [phase]);
+
   // live "did you mean …?" while typing the destination
   useEffect(() => {
     const d = destination.trim();
@@ -503,14 +588,12 @@ function PlannerBody({
     setSuggestion(fix && fix.toLowerCase() !== d.toLowerCase() ? fix : null);
   }, [destination]);
 
-  // reload recent trips whenever the history toggle changes
+  /* The recent-trips card mirrors whatever the account currently holds:
+     loadHistory() already returns nothing when history is off or nobody is
+     signed in, and the change event fires when the cloud pull lands. */
   useEffect(() => {
-    setTrips(historyOn ? loadHistory() : []);
-  }, [historyOn]);
-
-  // reload after cloud merges / sign-in syncs
-  useEffect(() => {
-    const onTrips = () => setTrips(historyOn ? loadHistory() : []);
+    const onTrips = () => setTrips(loadHistory());
+    onTrips();
     window.addEventListener(TRIPS_CHANGED_EVENT, onTrips);
     return () => window.removeEventListener(TRIPS_CHANGED_EVENT, onTrips);
   }, [historyOn]);
@@ -596,7 +679,7 @@ function PlannerBody({
       const result = await planTrip(req);
       setPlan(result);
       setPhase("result");
-      // record in local history (only when the user keeps it switched on)
+      // keep it in the traveller's account (only while they've asked us to)
       if (historyOn && !result._mock && destination.trim()) {
         const totals = result.estimatedTotal || {};
         saveTripToHistory({

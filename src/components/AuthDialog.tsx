@@ -6,38 +6,13 @@ import {
   signInWithGoogle,
   signUpWithEmail,
   watchAuth,
-  pullCloudTrips,
   type AuthUser,
 } from "@/lib/firebase";
-import { loadHistory, writeHistory, isHistoryEnabled } from "@/lib/history";
-import type { TripHistoryEntry } from "@/lib/history";
-import {
-  AUTH_CHANGED_EVENT,
-  OPEN_AUTH_EVENT,
-  TRIPS_CHANGED_EVENT,
-} from "@/lib/events";
+import { forgetHistorySession, refreshHistory } from "@/lib/history";
+import { syncProfile } from "@/lib/profile";
+import { AUTH_CHANGED_EVENT, OPEN_AUTH_EVENT, profileChanged } from "@/lib/events";
 
 type Mode = "signin" | "signup";
-
-function mergeCloudIntoLocal(uid: string): void {
-  if (!isHistoryEnabled()) return;
-  pullCloudTrips(uid)
-    .then((cloudTrips) => {
-      const local = loadHistory();
-      const byKey = new Map<string, TripHistoryEntry>();
-      for (const t of [...local, ...cloudTrips]) {
-        const key = (t.destination || "").toLowerCase();
-        if (!key) continue;
-        const prev = byKey.get(key);
-        if (!prev || (t.savedAt || 0) > (prev.savedAt || 0)) byKey.set(key, t);
-      }
-      writeHistory([...byKey.values()].sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0)));
-      window.dispatchEvent(new CustomEvent(TRIPS_CHANGED_EVENT));
-    })
-    .catch(() => {
-      /* merge is best-effort */
-    });
-}
 
 export default function AuthDialog() {
   const [open, setOpen] = useState(false);
@@ -48,18 +23,26 @@ export default function AuthDialog() {
   const [error, setError] = useState("");
   const [user, setUser] = useState<AuthUser | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  const mergedFor = useRef<string | null>(null);
+  const loadedFor = useRef<string | null>(null);
 
-  // auth state + silent cloud→local merge on sign-in
+  /* Auth state, plus the two things that follow an account rather than a
+     device: the trip history (which now lives only in Firestore) and the
+     traveller's profile. Signing out drops the session mirror on the spot. */
   useEffect(() => {
     const unsub = watchAuth((u) => {
       setUser(u);
       window.dispatchEvent(new CustomEvent(AUTH_CHANGED_EVENT, { detail: u }));
-      if (u && u.uid !== mergedFor.current) {
-        mergedFor.current = u.uid;
-        mergeCloudIntoLocal(u.uid);
+      if (u && u.uid !== loadedFor.current) {
+        loadedFor.current = u.uid;
+        void refreshHistory(u.uid);
+        // The profile follows the account, so the hero chip and the planner's
+        // defaults are already right on a device this traveler has never used.
+        syncProfile(u.uid).then(profileChanged).catch(() => {});
       }
-      if (!u) mergedFor.current = null;
+      if (!u) {
+        loadedFor.current = null;
+        forgetHistorySession();
+      }
     });
     return unsub;
   }, []);
@@ -91,8 +74,8 @@ export default function AuthDialog() {
 
   const finish = (u: AuthUser) => {
     setUser(u);
-    mergedFor.current = u.uid;
-    mergeCloudIntoLocal(u.uid);
+    loadedFor.current = u.uid;
+    void refreshHistory(u.uid);
     window.dispatchEvent(new CustomEvent(AUTH_CHANGED_EVENT, { detail: u }));
     setOpen(false);
     setEmail("");
@@ -169,8 +152,9 @@ export default function AuthDialog() {
               Saved trips will follow you across devices once they do.
             </p>
             <p className="mt-3 text-white/50 text-[13px] leading-relaxed">
-              In the meantime nothing is lost — your trip history is kept right here in
-              this browser, and planning works exactly the same without an account.
+              Planning works exactly the same in the meantime — trip history is
+              the one thing that waits for an account, because it's kept there
+              rather than on your device.
             </p>
           </div>
         ) : (
@@ -254,9 +238,9 @@ export default function AuthDialog() {
             )}
 
             <p className="mt-5 text-[12px] text-white/35 leading-relaxed border-t border-white/10 pt-4">
-              Signing in syncs your trip history across devices via your private
-              Firebase account. Passwords are handled by Firebase — VeloceWay never
-              sees them.
+              Your trip history is kept in your own private account — nothing is
+              stored on this device — so it's there on every device you sign in
+              on. Passwords are handled by Firebase; VeloceWay never sees them.
             </p>
           </>
         )}
