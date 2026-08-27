@@ -1,0 +1,374 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── base ─────────────────────────────────────────────────────────────── */
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  font-family: 'Playfair Display', Georgia, serif;
+  overflow-x: hidden;
+  background: #fff;
+}
+
+/* Pin the identity font onto Tailwind's font utilities so a stale dev-server
+   cache can never render the old typeface. Same value as the config token. */
+.font-sans,
+.font-display {
+  font-family: 'Playfair Display', Georgia, serif !important;
+}
+
+::selection {
+  background: rgba(230, 59, 46, 0.25);
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #e63b2e;
+  outline-offset: 2px;
+}
+
+/* tabular figures wherever money appears */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* thin scrollbar inside the planner overlay */
+.overlay-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.overlay-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+}
+.overlay-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ── scroll reveal ────────────────────────────────────────────────────── */
+
+.reveal {
+  opacity: 0;
+  transform: translateY(26px);
+}
+.reveal.is-revealed {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ── ambient motion ───────────────────────────────────────────────────── */
+
+/* the hero glass card floats inside this wrapper — the spec'd card element
+   itself is never touched */
+@keyframes wander-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-9px); }
+}
+.float-slow {
+  animation: wander-float 7s ease-in-out infinite;
+}
+
+/* departures-board ticker */
+@keyframes ticker-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.ticker-track {
+  display: flex;
+  width: max-content;
+  animation: ticker-scroll 38s linear infinite;
+}
+.ticker:hover .ticker-track {
+  animation-play-state: paused;
+}
+
+/* dashed route lines quietly flowing */
+@keyframes dash-flow {
+  to { stroke-dashoffset: -28; }
+}
+.dash-flow {
+  stroke-dasharray: 6 8;
+  animation: dash-flow 2.6s linear infinite;
+}
+
+/* slow cinematic zoom on the hero's still photo */
+@keyframes ken-burns {
+  from { transform: scale(1); }
+  to { transform: scale(1.08); }
+}
+.ken-burns {
+  animation: ken-burns 26s ease-in-out infinite alternate;
+  transform-origin: center;
+}
+
+/* ── 3D tilt cards (destination "stamps") ─────────────────────────────── */
+
+.tilt-wrap {
+  perspective: 900px;
+}
+.tilt-card {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  transform-style: preserve-3d;
+  will-change: transform;
+  transition: transform 0.18s ease-out, box-shadow 0.3s ease;
+}
+.tilt-card .glare {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    420px circle at var(--gx, 50%) var(--gy, 50%),
+    rgba(255, 255, 255, 0.28),
+    transparent 55%
+  );
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  pointer-events: none;
+}
+.tilt-card:hover .glare {
+  opacity: 1;
+}
+
+/* ── planner loading: wireframe globe + orbiting plane ────────────────── */
+
+.globe-stage {
+  perspective: 800px;
+}
+.globe {
+  position: relative;
+  width: 132px;
+  height: 132px;
+  transform-style: preserve-3d;
+  animation: globe-spin 14s linear infinite;
+}
+.globe-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+}
+@keyframes globe-spin {
+  from { transform: rotateX(-18deg) rotateY(0deg); }
+  to { transform: rotateX(-18deg) rotateY(360deg); }
+}
+.orbit {
+  position: absolute;
+  inset: -34px;
+  animation: orbit-spin 5.5s linear infinite;
+}
+.orbit-plane {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  margin-left: -12px;
+  /* counter-rotate so the plane stays level while circling */
+  animation: orbit-counter 5.5s linear infinite;
+}
+@keyframes orbit-spin {
+  from { transform: rotateZ(0deg) rotateX(64deg); }
+  to { transform: rotateZ(360deg) rotateX(64deg); }
+}
+@keyframes orbit-counter {
+  from { transform: rotateZ(-360deg); }
+  to { transform: rotateZ(0deg); }
+}
+
+/* boarding-pass punch notches */
+.perf-notches {
+  position: relative;
+}
+.perf-notches::before,
+.perf-notches::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  background: var(--notch-bg, #0a0a0a);
+  transform: translateY(-50%);
+}
+.perf-notches::before { left: -13px; }
+.perf-notches::after { right: -13px; }
+
+/* small uppercase eyebrow labels */
+.stamp-label {
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+/* ── accessibility floor ──────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
+  }
+  .tilt-card {
+    transform: none !important;
+  }
+}
+
+/* ── city map: Google-Maps-dark treatment ─────────────────────────────── */
+
+/* raster OSM tiles, recoloured into a dark basemap */
+.vwx-map .vwx-tiles img {
+  filter: invert(1) hue-rotate(185deg) grayscale(0.72) brightness(0.92) contrast(0.92)
+    saturate(0.55);
+}
+.vwx-vignette {
+  background:
+    radial-gradient(120% 90% at 50% 45%, transparent 55%, rgba(0, 0, 0, 0.42) 100%),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.28) 0%, transparent 22%, transparent 74%, rgba(0, 0, 0, 0.4) 100%);
+}
+
+/* floating glass surfaces */
+.vwx-panel,
+.vwx-badge,
+.vwx-ctrl-group {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(14, 15, 18, 0.88);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.5);
+}
+.vwx-panel {
+  border-radius: 18px;
+}
+.vwx-badge {
+  border-radius: 9999px;
+  padding: 8px 14px;
+}
+.vwx-ctrl-group {
+  border-radius: 12px;
+  overflow: hidden;
+}
+.vwx-panel-list {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+.vwx-panel-list::-webkit-scrollbar {
+  width: 6px;
+}
+.vwx-panel-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 9999px;
+}
+
+/* numbered accent pins */
+.vwx-ctrl {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: none;
+  background: transparent;
+  color: #e8eaed;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.vwx-ctrl:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.09);
+}
+.vwx-ctrl:disabled {
+  color: rgba(255, 255, 255, 0.25);
+  cursor: default;
+}
+.vwx-ctrl-top {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.vwx-attrib {
+  border-radius: 9999px;
+  background: rgba(10, 11, 13, 0.72);
+  backdrop-filter: blur(8px);
+  padding: 3px 10px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.4);
+  white-space: nowrap;
+}
+.vwx-attrib a {
+  color: rgba(255, 255, 255, 0.6);
+  text-decoration: none;
+}
+.vwx-attrib a:hover {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* teardrop pins */
+.vwx-pin-wrap {
+  filter: drop-shadow(0 7px 10px rgba(0, 0, 0, 0.55));
+}
+.vwx-pin {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50% 50% 50% 4px;
+  transform: rotate(-45deg);
+  background: #e63b2e;
+  border: 2px solid rgba(255, 255, 255, 0.94);
+  transition: transform 0.18s ease, background-color 0.18s ease;
+}
+.vwx-pin:hover,
+.vwx-pin.is-active {
+  transform: rotate(-45deg) scale(1.18);
+  background: #ff5540;
+}
+.vwx-pin-num {
+  transform: rotate(45deg);
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* pin callout */
+.vwx-bubble {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 220px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(16, 17, 20, 0.95);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+  text-align: left;
+  white-space: nowrap;
+}
+.vwx-bubble-title {
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+}
+.vwx-bubble-sub {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 11px;
+}
